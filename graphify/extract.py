@@ -2387,10 +2387,13 @@ def _svelte_mask_non_script(src: str) -> tuple[str, str | None]:
             continue
         start, end = m.start(2), m.end(2)
         chars[start:end] = src[start:end]
-        # Terminate the region in place of the following `<`, so two scripts on
-        # one line don't run together into a single statement.
-        if end < len(chars) and chars[end] == " ":
-            chars[end] = ";"
+        # Terminate the region in place of the closing `</script`, so two scripts
+        # on one line don't run together. U+2028 is a JS line terminator, so it
+        # ends a trailing `//` comment that would otherwise swallow the next
+        # block; the `;` after it then ends the statement (inside the comment it
+        # would be inert). U+2028 is not a newline, so line numbers hold, and its
+        # 3 UTF-8 bytes replace 3 ASCII ones, so byte offsets do too.
+        chars[end:end + 4] = ["\u2028", ";", "", ""]
         if lang is None:
             lang_m = _SCRIPT_LANG_RE.search(m.group(1))
             if lang_m:
@@ -2421,8 +2424,8 @@ def extract_svelte(path: Path) -> dict:
     """
     try:
         src = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return {"nodes": [], "edges": []}
+    except OSError as e:
+        return {"nodes": [], "edges": [], "error": str(e)}
 
     masked, lang = _svelte_mask_non_script(src)
     config = _JS_CONFIG if lang in ("js", "jsx") else _TS_CONFIG

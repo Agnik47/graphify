@@ -164,6 +164,38 @@ def test_extract_svelte_scripts_on_one_line_do_not_merge(tmp_path):
     assert "b()" in _labels(result)
 
 
+def test_extract_svelte_line_comment_does_not_swallow_next_script(tmp_path):
+    """A `//` comment ending one block must not hide a block on the same line."""
+    component = _write(
+        tmp_path / "src/Commented.svelte",
+        "<script module>// shared</script><script>function b() {}</script>\n"
+        "<script>function c() {}</script>\n",
+    )
+    result = extract_svelte(component)
+    assert result.get("parse_errors") is None
+    labels = _labels(result)
+    assert labels.get("b()") == "L1"
+    assert labels.get("c()") == "L2"
+
+
+def test_extract_svelte_comment_after_unterminated_statement(tmp_path):
+    """A statement with no `;` before the `//` comment still ends at the block."""
+    component = _write(
+        tmp_path / "src/Unterminated.svelte",
+        "<script module>const a = 1 // shared</script><script>function b() {}</script>\n",
+    )
+    result = extract_svelte(component)
+    assert result.get("parse_errors") is None
+    assert _labels(result).get("b()") == "L1"
+
+
+def test_extract_svelte_unreadable_file_reports_error(tmp_path):
+    """A file that cannot be read is reported, not returned as an empty result."""
+    result = extract_svelte(tmp_path / "missing" / "Gone.svelte")
+    assert result["nodes"] == [] and result["edges"] == []
+    assert "error" in result
+
+
 def test_extract_svelte_markup_only_component_does_not_crash(tmp_path):
     """A `.svelte` file need not have a `<script>` block at all."""
     component = _write(tmp_path / "src/Plain.svelte", "<h1>no script here</h1>\n")
